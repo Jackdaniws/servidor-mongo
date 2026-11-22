@@ -11,6 +11,13 @@ client = MongoClient(MONGO_URI)
 # Nome do banco e da coleção (tabela) que serão criados automaticamente no Atlas
 db = client["meu_app_db"]
 colecao = db["dados_compartilhados"]
+colecao = db["sebo"]
+colecao = db["Farinha"]
+colecao = db["quimicos"]
+colecao = db["embalagens"]
+
+
+
 
 
 @app.route("/", methods=["GET"])
