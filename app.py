@@ -2,8 +2,9 @@ import os
 from bson import ObjectId
 from bson.errors import InvalidId
 from flask import Flask, request, jsonify
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+from pymongo import MongoClient, ASCENDING
+from pymongo.errors import PyMongoError, DuplicateKeyError
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 
@@ -21,6 +22,12 @@ COLECOES_PERMITIDAS = {
     "quimicos": db["quimicos"],
     "embalagens": db["embalagens"],
 }
+
+usuarios = db["usuarios"]
+try:
+    usuarios.create_index([("usuario", ASCENDING)], unique=True)
+except PyMongoError:
+    pass
 
 
 def obter_colecao(nome: str):
@@ -74,6 +81,60 @@ def home():
 def health():
     client.admin.command("ping")
     return jsonify({"status": "ok", "database": "conectado"}), 200
+
+
+# CADASTRO: POST /cadastro com {"usuario": "...", "senha": "..."}
+@app.route("/cadastro", methods=["POST"])
+def cadastrar_usuario():
+    dados = request.get_json(silent=True)
+    if not dados or not isinstance(dados, dict):
+        return jsonify({"erro": "Envie um objeto JSON válido"}), 400
+
+    usuario = str(dados.get("usuario", "")).strip().lower()
+    senha = str(dados.get("senha", ""))
+
+    if not usuario or not senha:
+        return jsonify({"erro": "Informe 'usuario' e 'senha'"}), 400
+
+    novo_usuario = {
+        "usuario": usuario,
+        "senha_hash": generate_password_hash(senha),
+    }
+
+    try:
+        resultado = usuarios.insert_one(novo_usuario)
+    except DuplicateKeyError:
+        return jsonify({"erro": "Usuário já cadastrado"}), 409
+
+    return jsonify({
+        "mensagem": "Usuário cadastrado com sucesso!",
+        "id": str(resultado.inserted_id),
+        "usuario": usuario,
+    }), 201
+
+
+# LOGIN: POST /login com {"usuario": "...", "senha": "..."}
+@app.route("/login", methods=["POST"])
+def fazer_login():
+    dados = request.get_json(silent=True)
+    if not dados or not isinstance(dados, dict):
+        return jsonify({"erro": "Envie um objeto JSON válido"}), 400
+
+    usuario = str(dados.get("usuario", "")).strip().lower()
+    senha = str(dados.get("senha", ""))
+
+    if not usuario or not senha:
+        return jsonify({"erro": "Informe 'usuario' e 'senha'"}), 400
+
+    doc = usuarios.find_one({"usuario": usuario})
+    if not doc or not check_password_hash(doc.get("senha_hash", ""), senha):
+        return jsonify({"erro": "Usuário ou senha inválidos"}), 401
+
+    return jsonify({
+        "mensagem": "Login realizado com sucesso!",
+        "id": str(doc["_id"]),
+        "usuario": doc["usuario"],
+    }), 200
 
 
 # 1. INSERIR: POST /salvar/sebo
